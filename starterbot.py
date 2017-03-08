@@ -12,47 +12,62 @@ BOT_ID = os.environ.get("BOT_ID")
 AT_BOT = "<@" + BOT_ID + ">"
 EXAMPLE_COMMAND = "do"
 
+#Movie quotes
+QUOTES = (
+    """Archaeology is the search for fact... not truth. If it's truth you're looking for, Dr. Tyree's philosophy class is right down the hall.""",
+    """Nothing shocks me. I'm a scientist.""",
+    """I'm like a bad penny, I always turn up.""",
+    """DON'T call me Junior!""",
+)
+
 # instantiate Slack & Twilio clients
 slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
 
-
-def handle_command(command, channel):
+def handle_command(text, channel, bot_mentioned):
     """
-        Receives commands directed at the bot and determines if they
-        are valid commands. If so, then acts on the commands. If not,
-        returns back what it needs for clarification.
+    Decide how to process the text that was received.
     """
-    response = "Not sure what you mean. Use the *" + EXAMPLE_COMMAND + \
-               "* command with numbers, delimited by spaces."
-    if command.startswith(EXAMPLE_COMMAND):
-        response = "I'd love to do that!  Maybe you can talk to the programmer about that."
+    respond = False
+    if bot_mentioned or random.random() >= 0.5:
+        respond = True
+        text = text.replace(AT_BOT, "")
     else:
-        t = textblob.TextBlob(command)
+        print("I choose not to respond.")
+    if respond: 
+        t = textblob.TextBlob(text)
         wl = t.noun_phrases
         if len(wl) > 0:
             np = random.choice(wl).singularize().pluralize()
             response = "{0}!  Why did it have to be {0}?  I hate {0}!".format(np)
-    slack_client.api_call("chat.postMessage", channel=channel,
-                          text=response, as_user=True)
-
+        else:
+            response = random.choice(QUOTES)
+        slack_client.api_call(
+            "chat.postMessage", 
+            channel=channel,
+            text=response, 
+            as_user=True)
 
 def parse_slack_output(slack_rtm_output):
     """
-        The Slack Real Time Messaging API is an events firehose.
-        this parsing function returns None unless a message is
-        directed at the Bot, based on its ID.
+    The Slack Real Time Messaging API is an events firehose.
+
+    Yields text, channel, bot_mentioned, user        
     """
     output_list = slack_rtm_output
     if output_list and len(output_list) > 0:
         for output in output_list:
-            if output and 'text' in output and AT_BOT in output['text']:
-                # return text after the @ mention, whitespace removed
+            if output and 'text' in output:
+                if AT_BOT in output['text']:
+                    bot_mentioned = True
+                else:
+                    bot_mentioned = False
+                user = output.get("user", None)
                 result = tuple([
-                    output['text'].split(AT_BOT)[1].strip().lower(), 
-                    output['channel']])
-                return result
-    return None, None
-
+                    output['text'].strip(), 
+                    output['channel'],
+                    bot_mentioned,
+                    user])
+                yield result
 
 if __name__ == "__main__":
     print("BOT_ID: {0}".format(BOT_ID))
@@ -61,9 +76,15 @@ if __name__ == "__main__":
     if slack_client.rtm_connect():
         print("StarterBot connected and running!")
         while True:
-            command, channel = parse_slack_output(slack_client.rtm_read())
-            if command and channel:
-                handle_command(command, channel)
+            for text, channel, bot_mentioned, user in parse_slack_output(slack_client.rtm_read()):
+                print("text: {0}\nchannel:{1}\nbot_mentioned: {2}\nuser: {3}\n".format(
+                    text,
+                    channel,
+                    bot_mentioned,
+                    user))
+                if user != BOT_ID:
+                    if text and channel:
+                        handle_command(text, channel, bot_mentioned)
             time.sleep(READ_WEBSOCKET_DELAY)
     else:
         print("Connection failed. Invalid Slack token or bot ID?")
