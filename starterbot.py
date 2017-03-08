@@ -1,6 +1,8 @@
 import os
+import random
 import time
 from slackclient import SlackClient
+import textblob
 
 
 # starterbot's ID as an environment variable
@@ -23,7 +25,13 @@ def handle_command(command, channel):
     response = "Not sure what you mean. Use the *" + EXAMPLE_COMMAND + \
                "* command with numbers, delimited by spaces."
     if command.startswith(EXAMPLE_COMMAND):
-        response = "Sure...write some more code then I can do that!"
+        response = "I'd love to do that!  Maybe you can talk to the programmer about that."
+    else:
+        t = textblob.TextBlob(command)
+        wl = t.noun_phrases
+        if len(wl) > 0:
+            np = random.choice(wl).singularize().pluralize()
+            response = "{0}!  Why did it have to be {0}?  I hate {0}!".format(np)
     slack_client.api_call("chat.postMessage", channel=channel,
                           text=response, as_user=True)
 
@@ -39,12 +47,16 @@ def parse_slack_output(slack_rtm_output):
         for output in output_list:
             if output and 'text' in output and AT_BOT in output['text']:
                 # return text after the @ mention, whitespace removed
-                return output['text'].split(AT_BOT)[1].strip().lower(), \
-                       output['channel']
+                result = tuple([
+                    output['text'].split(AT_BOT)[1].strip().lower(), 
+                    output['channel']])
+                return result
     return None, None
 
 
 if __name__ == "__main__":
+    print("BOT_ID: {0}".format(BOT_ID))
+    print("AT_BOT: {0}".format(AT_BOT))
     READ_WEBSOCKET_DELAY = 1 # 1 second delay between reading from firehose
     if slack_client.rtm_connect():
         print("StarterBot connected and running!")
